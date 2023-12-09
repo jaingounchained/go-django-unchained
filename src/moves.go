@@ -1,7 +1,5 @@
 package src
 
-type Move uint16
-
 type Square uint16
 
 const (
@@ -71,23 +69,54 @@ const (
 	h8
 )
 
-type PromotionPieceType uint16
+type Move uint16
 
+// Move Types
 const (
-	KnightPromotion PromotionPieceType = 0 << 12
-	BishopPromotion PromotionPieceType = 1 << 12
-	RookPromotion   PromotionPieceType = 2 << 12
-	QueenPromotion  PromotionPieceType = 3 << 12
+	// Ordinary moves
+	Normal  Move = 0 << 12
+	Capture Move = 1 << 12
+
+	// Promotions
+	KnightPromotionNormal  Move = 2 << 12
+	KnightPromotionCapture Move = 3 << 12
+	BishopPromotionNormal  Move = 4 << 12
+	BishopPromotionCapture Move = 5 << 12
+	RookPromotionNormal    Move = 6 << 12
+	RookPromotionCapture   Move = 7 << 12
+	QueenPromotionNormal   Move = 8 << 12
+	QueenPromotionCapture  Move = 9 << 12
+
+	// Double Pawn Push
+	DoublePawnPush Move = 10 << 12
+
+	// Castling
+	WhiteKingSideCastling  Move = 11 << 12
+	WhiteQueenSideCastling Move = 12 << 12
+	BlackKingSideCastling  Move = 13 << 12
+	BlackQueenSideCastling Move = 14 << 12
+
+	// En Passant
+	EnPassant Move = 15 << 12
 )
 
-type MoveType uint16
+// Promotion Piece Type of type Move
+// const (
+// 	KnightPromotion Move = 0 << 12
+// 	BishopPromotion Move = 1 << 12
+// 	RookPromotion   Move = 2 << 12
+// 	QueenPromotion  Move = 3 << 12
+// )
+// const promotionPieceTypeMask = Move(3) << 12
 
-const (
-	Normal    MoveType = 0 << 14
-	Promotion MoveType = 1 << 14
-	CastlingM MoveType = 2 << 14
-	EnPassant MoveType = 3 << 14
-)
+// // Move Type of type Move
+// const (
+// 	Normal    Move = 0 << 14
+// 	Promotion Move = 1 << 14
+// 	CastlingM Move = 2 << 14
+// 	EnPassant Move = 3 << 14
+// )
+// const moveTypeMask = Move(3) << 14
 
 // func (sq Square) String() string {
 // 	if sq >= 0 && sq <= 63 {
@@ -96,3 +125,7 @@ const (
 // 		return "No square"
 // 	}
 // }
+
+func squaresToMove(start, end Square, moveType Move) Move {
+	return Move(start+end<<6) + moveType
+}

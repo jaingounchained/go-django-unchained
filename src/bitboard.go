@@ -11,9 +11,9 @@ type Bitboard uint64
 
 type PieceBitboard [TotalPieceTypes]Bitboard
 
-type PiecePlacementR map[Color]*PieceBitboard
+type PiecePlacement map[Color]PieceBitboard
 
-type OccupiedSquares map[Color]Bitboard
+type OccupiedSquaresColorWise map[Color]Bitboard
 
 func (bb Bitboard) leftmostSignificantSquare() Square {
 	return Square(Log2n(uint64(bb) & uint64(-bb)))
@@ -23,10 +23,10 @@ func (bb Bitboard) removePieces(ourSquares Bitboard) Bitboard {
 	return bb & ^ourSquares
 }
 
-func (bb Bitboard) spawnMoves(initialSq Square) (moveList []Move) {
+func (bb Bitboard) spawnMoves(initialSq Square, moveType Move) (moveList []Move) {
 	for ; bb > 0; bb &= bb - 1 {
 		finalSq := bb.leftmostSignificantSquare()
-		moveList = append(moveList, Move(initialSq+finalSq<<6))
+		moveList = append(moveList, moveType+Move(initialSq+finalSq<<6))
 	}
 	return
 }
@@ -53,27 +53,27 @@ const (
 	southEast Direction = -7
 )
 
-const (
-	Rank1 int = iota
-	Rank2
-	Rank3
-	Rank4
-	Rank5
-	Rank6
-	Rank7
-	Rank8
-)
+// const (
+// 	Rank1 int = iota
+// 	Rank2
+// 	Rank3
+// 	Rank4
+// 	Rank5
+// 	Rank6
+// 	Rank7
+// 	Rank8
+// )
 
-const (
-	filea int = iota
-	fileb
-	filec
-	filed
-	filee
-	filef
-	fileg
-	fileh
-)
+// const (
+// 	filea int = iota
+// 	fileb
+// 	filec
+// 	filed
+// 	filee
+// 	filef
+// 	fileg
+// 	fileh
+// )
 
 func (bb Bitboard) shift(d Direction) Bitboard {
 	switch d {
@@ -94,13 +94,22 @@ func (bb Bitboard) bitShift(i Direction) Bitboard {
 	}
 }
 
-// Structure for holding masks w.r.t. squares
+type Slider int
+
+const (
+	file Slider = iota
+	rank
+	diagonal
+	antiDiagonal
+)
+
+/*
+	SqMask = Square Mask
+	Structure for holding masks w.r.t. squares
+*/
 type SqMask struct {
-	bitMask            Bitboard
-	rankMaskEx         Bitboard
-	fileMaskEx         Bitboard
-	diagonalMaskEx     Bitboard
-	antiDiagonalMaskEx Bitboard
+	bitMask      Bitboard
+	sliderMaskEx map[Slider]Bitboard
 }
 
 var notAFile Bitboard = 0xfefefefefefefefe
@@ -108,19 +117,21 @@ var notHFile Bitboard = 0x7f7f7f7f7f7f7f7f
 var notABFile Bitboard = 0xFCFCFCFCFCFCFCFC
 var notGHFile Bitboard = 0x3F3F3F3F3F3F3F3F
 
+/*
+	Calcuated in starting to generate sliding piece attacks
+*/
 var sqMask [64]SqMask
 
 // precalculate mask array indexed on square
 func GenerateSquareMasks() {
-
-	var north Bitboard = 0x0101010101010100
-	var south Bitboard = 0x0080808080808080
-	var east Bitboard = 0xFE
-	var west Bitboard = 0x7F
-	var northEast Bitboard = 0x8040201008040200
-	var southWest Bitboard = 0x40201008040201
-	var northWest Bitboard = 0x102040810204000
-	var southEast Bitboard = 0x2040810204080
+	var n Bitboard = 0x0101010101010100
+	var s Bitboard = 0x0080808080808080
+	var e Bitboard = 0xFE
+	var w Bitboard = 0x7F
+	var ne Bitboard = 0x8040201008040200
+	var sw Bitboard = 0x40201008040201
+	var nw Bitboard = 0x102040810204000
+	var se Bitboard = 0x2040810204080
 
 	// bit Mask
 	for i := 0; i < 64; i++ {
@@ -129,70 +140,100 @@ func GenerateSquareMasks() {
 
 	// file Mask excluding the square
 	for i := 0; i < 64; i++ {
-		sqMask[i].fileMaskEx = (north << i) | (south >> (63 - i))
+		sqMask[i].sliderMaskEx = make(map[Slider]Bitboard)
+		sqMask[i].sliderMaskEx[file] = (n << i) | (s >> (63 - i))
 	}
 
 	// rank Mask excluding the square
-	for i := 0; i < 8; i, east, west = i+1, east.eastOne(), west.westOne() {
-		ea := east
-		we := west
+	for i := 0; i < 8; i, e, w = i+1, e.shift(east), w.shift(west) {
+		ea := e
+		we := w
 		for k := 0; k < 8*8; k, ea, we = k+8, ea<<8, we<<8 {
-			sqMask[k+i].rankMaskEx |= ea   // east direction
-			sqMask[k+7-i].rankMaskEx |= we // west direction
+			sqMask[k+i].sliderMaskEx[rank] |= ea   // east direction
+			sqMask[k+7-i].sliderMaskEx[rank] |= we // west direction
 		}
 	}
 
 	// diagonal mask excluding the square
-	for i := 0; i < 8; i, northEast, southWest = i+1, northEast.eastOne(), southWest.westOne() {
-		noea := northEast
-		sowe := southWest
+	for i := 0; i < 8; i, ne, sw = i+1, ne.shift(east), sw.shift(west) {
+		noea := ne
+		sowe := sw
 		for k := 0; k < 8*8; k, noea, sowe = k+8, noea<<8, sowe>>8 {
-			sqMask[k+i].diagonalMaskEx |= noea // east direction
-			sqMask[56-k+7-i].diagonalMaskEx |= sowe
+			sqMask[k+i].sliderMaskEx[diagonal] |= noea // east direction
+			sqMask[56-k+7-i].sliderMaskEx[diagonal] |= sowe
 		}
 	}
 
 	// antidiagonal mask excluding the square
-	for i := 7; i >= 0; i, northWest, southEast = i-1, northWest.westOne(), southEast.eastOne() {
-		nowe := northWest
-		soea := southEast
+	for i := 7; i >= 0; i, nw, se = i-1, nw.shift(west), se.shift(east) {
+		nowe := nw
+		soea := se
 		for k := 0; k < 8*8; k, nowe, soea = k+8, nowe<<8, soea>>8 {
-			sqMask[k+i].antiDiagonalMaskEx |= nowe
-			sqMask[56-k+7-i].antiDiagonalMaskEx |= soea
+			sqMask[k+i].sliderMaskEx[antiDiagonal] |= nowe
+			sqMask[56-k+7-i].sliderMaskEx[antiDiagonal] |= soea
 		}
 	}
 }
 
-func (bb Bitboard) eastOne() Bitboard {
-	return (bb << 1) & notAFile
+// Calculated at starting
+var KingAttacks [64]Bitboard
+var KnightAttacks [64]Bitboard
+var PawnAttacks map[Color][64]Bitboard
+
+func GenerateNonSlidingPieceTypeAttackingSquares() {
+	var WhitePawnAttacks, BlackPawnAttacks [64]Bitboard
+	PawnAttacks = make(map[Color][64]Bitboard)
+
+	for i := 0; i < 64; i++ {
+		// sqBb = square Bitboard
+		sqBb := Bitboard(1 << i)
+
+		// generating King attacking squares
+		KingAttacks[i] = sqBb.shift(south) | sqBb.shift(north) |
+			((sqBb.bitShift(-9) | sqBb.bitShift(7) | sqBb.bitShift(-1)) & notHFile) |
+			((sqBb.bitShift(-7) | sqBb.bitShift(1) | sqBb.bitShift(9)) & notAFile)
+
+		// generating Knight attacking squares
+		KnightAttacks[i] = (sqBb.bitShift(-10) & notGHFile) |
+			(sqBb.bitShift(-17) & notHFile) |
+			(sqBb.bitShift(-15) & notAFile) |
+			(sqBb.bitShift(-6) & notABFile) |
+			(sqBb.bitShift(10) & notABFile) |
+			(sqBb.bitShift(17) & notAFile) |
+			(sqBb.bitShift(15) & notHFile) |
+			(sqBb.bitShift(6) & notGHFile)
+
+		// generating Pawn attacking squares for White & Black
+		// White Pawn Attacks
+		WhitePawnAttacks[i] = sqBb.shift(northEast) | sqBb.shift(northWest)
+		// Black Pawn Attacks
+		BlackPawnAttacks[i] = sqBb.shift(southEast) | sqBb.shift(southWest)
+		continue
+	}
+
+	PawnAttacks[White], PawnAttacks[Black] = WhitePawnAttacks, BlackPawnAttacks
 }
 
-func (bb Bitboard) westOne() Bitboard {
-	return (bb >> 1) & notHFile
-}
-
-func KnightAttacks(sq Square) Bitboard {
-	var NB Bitboard = 1 << sq
-	NAS :=
-		(NB.bitShift(-10) & notGHFile) |
-			(NB.bitShift(-17) & notHFile) |
-			(NB.bitShift(-15) & notAFile) |
-			(NB.bitShift(-6) & notABFile) |
-			(NB.bitShift(10) & notABFile) |
-			(NB.bitShift(17) & notAFile) |
-			(NB.bitShift(15) & notHFile) |
-			(NB.bitShift(6) & notGHFile)
-	return NAS
-}
-
-func KingAttacks(sq Square) Bitboard {
-	var KB Bitboard = 1 << sq
-	KAS :=
-		KB.shift(south) | KB.shift(north) |
-			((KB.bitShift(-9) | KB.bitShift(7) | KB.bitShift(-1)) & notHFile) |
-			((KB.bitShift(-7) | KB.bitShift(1) | KB.bitShift(9)) & notAFile)
-
-	return KAS
+// Calculate attacking squares for every piece based on square
+// attackBBSP = Bitboard of attacking squares by a single piece
+func (pt PieceType) attackBbSP(color Color, sq Square, ourSquares, opponentSquares Bitboard) Bitboard {
+	//	allOcc = all occupied squares
+	allOcc := ourSquares | opponentSquares
+	switch pt {
+	case King:
+		return KingAttacks[sq]
+	case Queen:
+		return diagonal.sliderAttacks(sq, allOcc) | antiDiagonal.sliderAttacks(sq, allOcc) | file.sliderAttacks(sq, allOcc) | rank.sliderAttacks(sq, allOcc)
+	case Rook:
+		return file.sliderAttacks(sq, allOcc) | rank.sliderAttacks(sq, allOcc)
+	case Bishop:
+		return diagonal.sliderAttacks(sq, allOcc) | antiDiagonal.sliderAttacks(sq, allOcc)
+	case Knight:
+		return KnightAttacks[sq]
+	case Pawn:
+		return PawnAttacks[color][sq]
+	}
+	return 0
 }
 
 /*
@@ -204,66 +245,19 @@ func KingAttacks(sq Square) Bitboard {
 	using Hyperbola Quintessence
 	https://www.chessprogramming.org/Hyperbola_Quintessence
 */
-func (occ Bitboard) fileAttacks(sq Square) Bitboard {
+// occ = occupied squares in Bitboars
+func (slider Slider) sliderAttacks(sq Square, occ Bitboard) Bitboard {
 	var forward, reverse Bitboard
 
 	// (o-r): masking the file & subtracting the sqaure
-	forward = occ & sqMask[sq].fileMaskEx
+	forward = occ & sqMask[sq].sliderMaskEx[slider]
 	reverse = forward.reverseBits()
 	// (o-2r)
 	forward -= sqMask[sq].bitMask
 	reverse -= sqMask[sq].bitMask.reverseBits()
 	// (o-2r)^rev(o'-2r')
 	forward ^= reverse.reverseBits()
-	forward &= sqMask[sq].fileMaskEx
-
-	return forward
-}
-
-func (occ Bitboard) rankAttacks(sq Square) Bitboard {
-	var forward, reverse Bitboard
-
-	// (o-r): masking the file & subtracting the sqaure
-	forward = occ & sqMask[sq].rankMaskEx
-	reverse = forward.reverseBits()
-	// (o-2r)
-	forward -= sqMask[sq].bitMask
-	reverse -= sqMask[sq].bitMask.reverseBits()
-	// (o-2r)^rev(o'-2r')
-	forward ^= reverse.reverseBits()
-	forward &= sqMask[sq].rankMaskEx
-
-	return forward
-}
-
-func (occ Bitboard) diagonalAttacks(sq Square) Bitboard {
-	var forward, reverse Bitboard
-
-	// (o-r): masking the file & subtracting the sqaure
-	forward = occ & sqMask[sq].diagonalMaskEx
-	reverse = forward.reverseBits()
-	// (o-2r)
-	forward -= sqMask[sq].bitMask
-	reverse -= sqMask[sq].bitMask.reverseBits()
-	// (o-2r)^rev(o'-2r')
-	forward ^= reverse.reverseBits()
-	forward &= sqMask[sq].diagonalMaskEx
-
-	return forward
-}
-
-func (occ Bitboard) antiDiagonalAttacks(sq Square) Bitboard {
-	var forward, reverse Bitboard
-
-	// (o-r): masking the file & subtracting the sqaure
-	forward = occ & sqMask[sq].antiDiagonalMaskEx
-	reverse = forward.reverseBits()
-	// (o-2r)
-	forward -= sqMask[sq].bitMask
-	reverse -= sqMask[sq].bitMask.reverseBits()
-	// (o-2r)^rev(o'-2r')
-	forward ^= reverse.reverseBits()
-	forward &= sqMask[sq].antiDiagonalMaskEx
+	forward &= sqMask[sq].sliderMaskEx[slider]
 
 	return forward
 }
@@ -276,7 +270,10 @@ func Log2n(n uint64) uint16 {
 	}
 }
 
-func (pp PiecePlacementR) String() string {
+/*
+	Utility toString functions
+*/
+func (pp PiecePlacement) String() string {
 	boardRep := make([][]string, 0)
 
 	boardRep = append(boardRep,

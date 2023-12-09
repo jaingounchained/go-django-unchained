@@ -54,12 +54,10 @@ func (fen Fen) Parse() (Position, error) {
 		enPassantTarget: enPassantTarget,
 		halfMoveClock:   uint16(halfMoveClock),
 		fullMoveNumber:  uint16(fullMoveNumber),
-
-		occupiedSquares: generateOccupiedSquares(piecePlacement),
-	}, nil
+	}.generateAuxiliaryInfo(), nil
 }
 
-func parsePiecePlacement(pp string) (PiecePlacementR, error) {
+func parsePiecePlacement(pp string) (PiecePlacement, error) {
 	ranks := strings.Split(pp, "/")
 	// return error if number of ranks != 8
 	if len(ranks) != 8 {
@@ -119,9 +117,9 @@ func parsePiecePlacement(pp string) (PiecePlacementR, error) {
 	}
 
 	// Piece Placement map
-	return PiecePlacementR{
-		White: &whitePieces,
-		Black: &blackPieces,
+	return PiecePlacement{
+		White: whitePieces,
+		Black: blackPieces,
 	}, nil
 }
 
@@ -156,8 +154,8 @@ func parseCastlingRights(cr string) (CastlingRights, error) {
 		}
 	}
 	return CastlingRights{
-		White: &WhiteCastlingType,
-		Black: &blackCastlingType,
+		White: WhiteCastlingType,
+		Black: blackCastlingType,
 	}, nil
 }
 
@@ -176,17 +174,4 @@ func parseEnPassantTarget(ept string) (Square, error) {
 	} else {
 		return 0, errors.New("en passant target in wrong format")
 	}
-}
-
-func generateOccupiedSquares(pp PiecePlacementR) OccupiedSquares {
-	os := make(OccupiedSquares)
-	os[White] = 0
-	os[Black] = 0
-
-	for color, pieceBitboard := range pp {
-		for i := 0; i < len(pieceBitboard); i++ {
-			os[color] += pieceBitboard[i]
-		}
-	}
-	return os
 }
